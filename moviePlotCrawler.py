@@ -73,7 +73,7 @@ for genreUrl in genreUrls:
             origTitle = moviePageTree.xpath("//li[1]/span/text()")
             info = moviePageTree.xpath("//li/span/a/text()")
             year, country, genre = info[0], info[1], info[2:]
-            plot = moviePageTree.xpath("//div/blockquote[1]/p/text()")[1]  
+            plot = moviePageTree.xpath("//div/blockquote[1]/p/text()")[1].strip()
 
             print('Movie info: {}'.format([title, origTitle, year, country, genre]))
             # Append parsed data to a temporary file in case of network disruptions
