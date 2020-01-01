@@ -2,7 +2,7 @@ from lxml import html
 import requests
 import csv
 import sys
-
+import numpy as np
 
 if __name__ == '__main__':
     if len(sys.argv)>1:
@@ -13,21 +13,27 @@ if __name__ == '__main__':
         print('Connecting to {}...'.format(mainUrl))
         mainPage = requests.get(mainUrl)
         mainTree = html.fromstring(mainPage.content)
-
         # Get urls for genre pages
         genreUrls = mainTree.xpath('//blockquote/p/em/strong/a/@href')
 
     # Prepare lists that will hold the DB attributes
     urls, titles, origTitles, years, countries, genres, plots  = [], [], [], [], [], [], []
+    # Dictionary for movie info parsing
+    info_dict = {
+                'year': 'amy_xronia',
+                'country': 'amy_xwra',
+                'genre': 'genre-list',
+            }
 
     # Join data parsed in parallel in a single file
-    print('Creating csv file to dumb movie info')
+    print('Creating csv file to dumb movie info')    
     movieInfoDumb = 'movieDB_filmy.csv'
-    with open(movieInfoDumb, 'w') as csvfile:
-        header = ['url', 'title', 'original_title', 'year', 'country', 'genre', 'plot']
-        writer = csv.DictWriter(csvfile, fieldnames=header)
-        writer.writeheader()
 
+    csvfile = open(movieInfoDumb, 'a')
+    header = ['url', 'title', 'original_title', 'year', 'country', 'genre', 'plot']
+    writer = csv.DictWriter(csvfile, fieldnames=header)
+    writer.writeheader()
+    csvfile.close()
     # Iterate movie www.filmy.gr per genre category
     for genreUrl in genreUrls:
         # Catch "documentary" genre error page
@@ -80,24 +86,31 @@ if __name__ == '__main__':
                 # title, original title, year, country, genres, plot
                 title = moviePageTree.xpath("//div/h1/a/text()")
                 origTitle = moviePageTree.xpath("//li[1]/span/text()")
+                
+                info_href = moviePageTree.xpath("//li/span/a/@href")
                 info = moviePageTree.xpath("//li/span/a/text()")
-                year, country, genre = info[0], info[1], info[2:]
-                plot = moviePageTree.xpath("//div/blockquote[1]/p/text()")[1].strip()
+                
+                year_idx = [i for i,label in enumerate(info_href) if info_dict['year'] in label.strip()]
+                country_idx = [i for i,label in enumerate(info_href) if info_dict['country'] in label.strip()]
+                genre_idx = [i for i,label in enumerate(info_href) if info_dict['genre'] in label.strip()]
 
-                print('Movie info: {}'.format([title, origTitle, year, country, genre]))
-                # Append parsed data to a temporary file in case of network disruptions
+                year = ','.join(list(map(lambda x: info[x].strip(), year_idx)))
+                country = ','.join(list(map(lambda x: info[x].strip(), country_idx)))
+                genre = ','.join(list(map(lambda x: info[x].strip(), genre_idx)))
+                # capture the plot by fetching the class 'wpb_wrapper' object with the largest number of characters
+                el = moviePageTree.xpath('//div[contains(@class, \'wpb_wrapper\')]/blockquote/p[not(starts-with(text(), ":"))]/text()')
+                if len(el)>3:
+                    test=1
+                    el = moviePageTree.xpath("//div[contains(@class, 'wpb_wrapper')]/blockquote/p/text()")
+                else:
+                    el = moviePageTree.xpath("//div[contains(@class, 'wpb_wrapper')]//p/text()")
+                    test=2
+                plot_idx = np.argsort(list(map(len, el)))[-1]
+                plot = el[plot_idx].strip()
+    
                 csvfile = open(movieInfoDumb, 'a')
                 writer = csv.writer(csvfile)
-                writer.writerow([moviePageUrl, title, origTitle, year, country, genre, plot])
+                writer.writerow(list(map(lambda x: str(x).strip(), [moviePageUrl, title, origTitle, year, country, genre, plot])))
                 csvfile.close()
 
-                urls.append(moviePageUrl)
-                titles.append(title)
-                origTitles.append(origTitle)
-                years.append(year)
-                countries.append(country)
-                genres.append(genre)
-                plots.append(plot)
-
     print('Finished parsing https://www.filmy.gr')
-    print('Construct movie dictionary')
