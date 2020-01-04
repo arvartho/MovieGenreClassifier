@@ -6,16 +6,23 @@ from sklearn.naive_bayes import MultinomialNB
 from utility_functions import *
 from sklearn.model_selection import GridSearchCV
 from sklearn.linear_model import LogisticRegression
+from sklearn.decomposition import TruncatedSVD, NMF
+from sklearn.feature_selection import SelectPercentile, chi2
 
 # Loading the input files
 
 trainData = pd.read_csv('../data/movieDB_clean_train.csv')
 testData = pd.read_csv('../data/movieDB_clean_test.csv')
 
+removeStopwords(testData,'title')
+removeStopwords(testData,'plot')
+removeStopwords(trainData,'title')
+removeStopwords(trainData,'plot')
+
 # split train and test sets
 
-train_X, train_y = trainData['plot'], trainData.drop(['title', 'plot'], axis=1)
-test_X, test_y = testData['plot'], testData.drop(['title', 'plot'], axis=1)
+train_X, train_y = trainData['new_plot'], trainData.drop(['new_title', 'new_plot'], axis=1)
+test_X, test_y = testData['new_plot'], testData.drop(['new_title', 'new_plot'], axis=1)
 
 categories = train_y.columns
 
@@ -38,60 +45,99 @@ print("Starting Bayes classifiers...")
 print("")
 
 pipeline = Pipeline([
-                ('tfidf', TfidfVectorizer(max_df=0.5, ngram_range=(1, 2))),
-                ('clf', OneVsRestClassifier(MultinomialNB(alpha=0.01, fit_prior=True, class_prior=None)))
+                ('tfidf', TfidfVectorizer()),
+                ('clf', OneVsRestClassifier(MultinomialNB(class_prior=None)))
             ])
-pipeline.fit(train_X, train_y)
 
-prob, y_pred = multiLabelPredict(pipeline, test_X, probThresh, categories)
+parameters = [
+            {
+            'tfidf__max_df': (0.25, 0.5, 0.75),
+            'tfidf__min_df': (1,2),
+            'tfidf__ngram_range': [(1, 1), (1, 2),(1, 3)],
+            'clf__estimator__alpha': (0.001, 0.01, 0.4, 0.8, 1),
+            'clf__estimator__fit_prior': (True,False)
+            }
+         ]
+
+grid_search_cv = GridSearchCV(pipeline, parameters, cv=2, n_jobs=-1)
+grid_search_cv.fit(train_X, train_y)
+
+best_clf = grid_search_cv.best_estimator_
+y_pred = best_clf.predict(test_X)
 printScores('BAYES', test_y, y_pred)
 
-# SVM
+# Linear SVM
 print("")
-print("Starting SVM classifiers...")
+print("Starting Linear SVM classifiers...")
 print("")
 
 pipeline = Pipeline([
             ('tfidf', TfidfVectorizer()),
-            ('clf', OneVsRestClassifier(LinearSVC(), n_jobs=1)),
+            ('clf', OneVsRestClassifier(LinearSVC(), n_jobs=-1)),
             ])
 
 # In order to obtain the parameters we used pipeline.get_params().keys()
-parameters = {
-            'tfidf__max_df': (0.25, 0.5),
-            'tfidf__min_df': (1, 3),
-            'tfidf__ngram_range': [(1, 1), (1, 2)],
-            "clf__estimator__C": [1, 10],
-            "clf__estimator__class_weight": ['balanced'],
+parameters = [
+            {
+            'tfidf__max_df': (0.25, 0.5, 0.75),
+            'tfidf__min_df': (1,2),
+            'tfidf__ngram_range': [(1, 1), (1, 2), (1, 3)],
+            'clf__estimator__class_weight': ['balanced'],
             }
+         ]
 
-grid_search_cv = GridSearchCV(pipeline, parameters, cv=2, n_jobs=4)
+grid_search_cv = GridSearchCV(pipeline, parameters, cv=2, n_jobs=-1)
 grid_search_cv.fit(train_X, train_y)
 
 # measuring performance on test set
 best_clf = grid_search_cv.best_estimator_
 y_pred = best_clf.predict(test_X)
-printScores('SVM', test_y, y_pred)
+printScores('Linear SVM', test_y, y_pred)
 
-# LogisticRegression
+# RBF SVM
+from sklearn.svm import SVC
 print("")
-print("Starting LogisticRegression classifiers...")
+print("Starting RBF SVM classifiers...")
 print("")
 pipeline = Pipeline([
             ('tfidf', TfidfVectorizer()),
-            ('clf', OneVsRestClassifier(LogisticRegression(), n_jobs=1)),
+            ('clf', OneVsRestClassifier(SVC(gamma=2, C=1,probability=True), n_jobs=-1)),
             ])
 parameters = {
-            'tfidf__max_df': [0.25, 0.5, 0.75],
-            'tfidf__min_df': [1, 2],
-            'tfidf__ngram_range': [(1, 1), (1, 2)],
-            "clf__estimator__C": [0.1, 1],
+            'tfidf__max_df': (0.25, 0.5, 0.75),
+            'tfidf__min_df': (1,2),
+            'tfidf__ngram_range': [(1, 1), (1, 3)],
             }
 
-grid_search_cv = GridSearchCV(pipeline, parameters, cv=2, n_jobs=3)
+grid_search_cv = GridSearchCV(pipeline, parameters, cv=2, n_jobs=-1)
 grid_search_cv.fit(train_X, train_y)
 
 # measuring performance on test set
 best_clf = grid_search_cv.best_estimator_
 prob, y_pred = multiLabelPredict(best_clf, test_X, probThresh, categories)
-printScores('LogisticRegression', test_y, y_pred)
+printScores('RBF SVM', test_y, y_pred)
+
+# Neural Net
+from sklearn.neural_network import MLPClassifier
+print("")
+print("Starting Neural Net classifiers...")
+print("")
+pipeline = Pipeline([
+            ('tfidf', TfidfVectorizer()),
+            ('select_features', SelectPercentile(chi2, percentile = 40)),
+            # NN Clasifier will need much resources so it will not be optimal to try different parameters
+            ('clf', OneVsRestClassifier(MLPClassifier(solver='lbfgs', tol=0.00001, activation='relu', hidden_layer_sizes=(25,25,25), max_iter = 500), n_jobs=6)),
+            ])
+parameters = {
+            'tfidf__max_df': (0.25, 0.5, 0.75),
+            'tfidf__min_df': (1,2),
+            'tfidf__ngram_range': [(1, 1), (1, 3)],
+            }
+
+grid_search_cv = GridSearchCV(pipeline, parameters, cv=2, n_jobs=-1)
+grid_search_cv.fit(train_X, train_y)
+
+# measuring performance on test set
+best_clf = grid_search_cv.best_estimator_
+prob, y_pred = multiLabelPredict(best_clf, test_X, probThresh, categories)
+printScores('Neural Net', test_y, y_pred)
