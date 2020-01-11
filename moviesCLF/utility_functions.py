@@ -157,6 +157,9 @@ def df_preprocessing(train_df, test_df):
 
 
 def word_preprocessing(doc): 
+   # Remove words with numbers
+   doc = re.sub("\S*\d\S*", " ", doc).strip()
+   # Lemmatization
    return list(filter(None, 
                      [re.sub(r'\s+', '', token.lemma_.lower()) 
                         for token in nlp(doc) if not token.is_punct 
@@ -198,7 +201,8 @@ def tfidf_vectorizer(series):
                                 min_df=2, 
                                 ngram_range=(1, 3),
                                 norm='l2', 
-                                strip_accents=None)
+                                strip_accents=None,
+                                max_features=2000)
    vectorizer.fit(series)
    print('Finished TF-IDF vectorizing in: ', datetime.now()-start)
    return vectorizer
@@ -214,12 +218,13 @@ def w2v_feature_selection(train_df, test_df, w2v_model):
    # Build Word2Vec features:
    train_df['w2v_feature'] = train_df['tokenized_feature'].apply(lambda x:build_w2v_features(x, w2v_model))
    test_df['w2v_feature'] = test_df['tokenized_feature'].apply(lambda x:build_w2v_features(x, w2v_model))
-
-   x_train = scale(np.array([x for x in train_df['w2v_feature'].values]))   
-   x_test = scale(np.array([x for x in test_df['w2v_feature'].values]))  
+   
+   # Feature scaling
+   x_train_scaled = np.array([x for x in train_df['w2v_feature'].values])   
+   x_test_scaled = np.array([x for x in test_df['w2v_feature'].values]) 
 
    print('Finished Word2Vec feature selection in: ', datetime.now()-start) 
-   return x_train, x_test 
+   return x_train_scaled, x_test_scaled 
 
 
 def weighted_w2v_feature_selection(train_df, test_df, w2v_model):
@@ -241,8 +246,9 @@ def weighted_w2v_feature_selection(train_df, test_df, w2v_model):
    test_df['weighted_w2v_feature'] = test_df['tokenized_feature'].apply(lambda x: 
          build_weighted_w2v_features(x, w2v_model, test_tfidf_vector))
 
-   x_train = scale(np.array([x[0] for x in train_df['weighted_w2v_feature'].values]))   
-   x_test = scale(np.array([x[0] for x in test_df['weighted_w2v_feature'].values]))   
+   # Feature scaling
+   x_train = np.array([x[0] for x in train_df['weighted_w2v_feature'].values])
+   x_test = np.array([x[0] for x in test_df['weighted_w2v_feature'].values])
 
    print('Finished Weighted Word2Vec feature selection in: ', datetime.now()-start)
    return x_train, x_test                                                                                           
